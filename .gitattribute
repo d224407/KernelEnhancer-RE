@@ -1,0 +1,5 @@
+# Ép buộc các file script và cấu hình luôn là LF (Unix)
+*.sh text eol=lf
+*.prop text eol=lf
+updater-script text eol=lf
+update-binary binary
