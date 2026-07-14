@@ -1,6 +1,6 @@
 {
-  "version": "5.0",
-  "versionCode": "50",
-  "zipUrl": "https://github.com/d224407/Android-Kernel-Optimzer/releases/download/v5/optimizer.zip",
+  "version": "6.0",
+  "versionCode": "60",
+  "zipUrl": "https://github.com/d224407/Android-Kernel-Optimzer/releases/download/v6/optimizer.zip",
   "changelog": "https://github.com/d224407/Android-Kernel-Optimzer/blob/main/CHANGELOG.md"
 }
