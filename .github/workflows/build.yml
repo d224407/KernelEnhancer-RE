@@ -1,21 +1,15 @@
-name: Build with Android NDK
+name: Build with Android NDK (dynamic)
 
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  release:
-    types: [ published ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
@@ -28,64 +22,31 @@ jobs:
           mkdir -p build/armv7
           NDK=${{ steps.setup-ndk.outputs.ndk-path }}
           CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang"
-          $CLANG \
-            -static \
-            -Os \
-            -s \
-            -o build/armv7/kernelenhancer \
-            src/KernelEnhancer.c
-          # Strip để đảm bảo nhỏ nhất
+          $CLANG -Os -s -o build/armv7/kernelenhancer src/KernelEnhancer.c
           "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" build/armv7/kernelenhancer
-          echo "ARMv7 size: $(ls -lh build/armv7/kernelenhancer | awk '{print $5}')"
+          ls -lh build/armv7/kernelenhancer
 
       - name: Build ARMv8 (64-bit)
         run: |
           mkdir -p build/armv8
           NDK=${{ steps.setup-ndk.outputs.ndk-path }}
           CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
-          $CLANG \
-            -static \
-            -Os \
-            -s \
-            -o build/armv8/kernelenhancer \
-            src/KernelEnhancer.c
+          $CLANG -Os -s -o build/armv8/kernelenhancer src/KernelEnhancer.c
           "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" build/armv8/kernelenhancer
-          echo "ARMv8 size: $(ls -lh build/armv8/kernelenhancer | awk '{print $5}')"
+          ls -lh build/armv8/kernelenhancer
 
-      - name: Prepare Magisk module
+      - name: Prepare module
         run: |
           MODULE_DIR="KernelEnhancer"
           mkdir -p "$MODULE_DIR/system/bin"
-
-          # Copy template files
           cp -r template/* "$MODULE_DIR/"
-
-          # Copy binaries
           cp build/armv7/kernelenhancer "$MODULE_DIR/system/bin/kernelenhancer_32"
           cp build/armv8/kernelenhancer "$MODULE_DIR/system/bin/kernelenhancer_64"
-
-          # Set permissions
-          chmod 755 "$MODULE_DIR/system/bin/"*
-          chmod 755 "$MODULE_DIR/"*.sh
-
-          # Create zip
-          cd "$MODULE_DIR"
-          zip -r "../optimizer.zip" *
-          cd ..
+          chmod 755 "$MODULE_DIR/system/bin/"* "$MODULE_DIR/"*.sh
+          cd "$MODULE_DIR" && zip -r "../optimizer.zip" * && cd ..
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: optimizer
           path: optimizer.zip
-
-      - name: Upload to release
-        if: github.event_name == 'release'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./optimizer.zip
-          asset_name: optimizer-${{ github.ref_name }}.zip
-          asset_content_type: application/zip
