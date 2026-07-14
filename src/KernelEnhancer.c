@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <ctype.h>
+#include <libgen.h>
 
 /* ==================== Định nghĩa chung ==================== */
 #define LOG_FILE    "/data/local/tmp/KernelEnhancer.log"
