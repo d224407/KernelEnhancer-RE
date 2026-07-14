@@ -1,15 +1,20 @@
-name: Build with Android NDK (dynamic)
+name: Build KernelEnhancer Module
 
 on:
-  push:
-    branches: [ main, master ]
+  # Chỉ chạy khi bấm nút "Run workflow" thủ công
   workflow_dispatch:
+
+  # Hoặc khi tạo release (nếu bạn muốn)
+  release:
+    types: [ published ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
@@ -22,20 +27,20 @@ jobs:
           mkdir -p build/armv7
           NDK=${{ steps.setup-ndk.outputs.ndk-path }}
           CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang"
-          $CLANG -Os -s -o build/armv7/kernelenhancer src/KernelEnhancer.c
+          $CLANG -Oz -s -o build/armv7/kernelenhancer src/KernelEnhancer.c
           "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" build/armv7/kernelenhancer
-          ls -lh build/armv7/kernelenhancer
+          echo "ARMv7 size: $(ls -lh build/armv7/kernelenhancer | awk '{print $5}')"
 
       - name: Build ARMv8 (64-bit)
         run: |
           mkdir -p build/armv8
           NDK=${{ steps.setup-ndk.outputs.ndk-path }}
           CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
-          $CLANG -Os -s -o build/armv8/kernelenhancer src/KernelEnhancer.c
+          $CLANG -Oz -s -o build/armv8/kernelenhancer src/KernelEnhancer.c
           "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" build/armv8/kernelenhancer
-          ls -lh build/armv8/kernelenhancer
+          echo "ARMv8 size: $(ls -lh build/armv8/kernelenhancer | awk '{print $5}')"
 
-      - name: Prepare module
+      - name: Prepare Magisk module
         run: |
           MODULE_DIR="KernelEnhancer"
           mkdir -p "$MODULE_DIR/system/bin"
@@ -50,3 +55,14 @@ jobs:
         with:
           name: optimizer
           path: optimizer.zip
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./optimizer.zip
+          asset_name: optimizer-${{ github.ref_name }}.zip
+          asset_content_type: application/zip
