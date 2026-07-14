@@ -4,4 +4,4 @@ version=v5.0
 versionCode=50
 author=d224407
 description=Optimize kernel performance (VM, scheduler, I/O, CPU governor)
-updateJson=https://github.com/d224407/Android-Kernel-Optimzer/blob/main/update.json
+updateJson=https://github.com/d224407/KernelEnhancer-FOSS/blob/main/update.json
