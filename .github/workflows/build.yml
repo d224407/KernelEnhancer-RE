@@ -27,15 +27,24 @@ jobs:
         with:
           ndk-version: r26d
 
-      - name: Bump version
+      - name: Bump version and generate changelog
         id: bump_version
         run: |
-          # Đọc version hiện tại từ module.prop
-          VERSION=$(grep "^version=" template/module.prop | cut -d'=' -f2 | sed 's/v//')
+          # Lấy version hiện tại, xóa 'v' nếu có và phân tích thành số
+          VERSION_RAW=$(grep "^version=" template/module.prop | cut -d'=' -f2)
+          VERSION=${VERSION_RAW#v}
           VERSION_CODE=$(grep "^versionCode=" template/module.prop | cut -d'=' -f2)
           
-          # Tăng version lên 1
-          NEW_VERSION=$((VERSION + 1))
+          # Nếu version có dạng x.y, tăng phần y lên 1
+          if [[ "$VERSION" == *"."* ]]; then
+            MAJOR=$(echo "$VERSION" | cut -d'.' -f1)
+            MINOR=$(echo "$VERSION" | cut -d'.' -f2)
+            NEW_MINOR=$((MINOR + 1))
+            NEW_VERSION="${MAJOR}.${NEW_MINOR}"
+          else
+            NEW_VERSION=$((VERSION + 1))
+          fi
+          
           NEW_VERSION_CODE=$((VERSION_CODE + 1))
           
           echo "Old version: v${VERSION} (code: ${VERSION_CODE})"
@@ -45,22 +54,35 @@ jobs:
           sed -i "s/^version=v.*/version=v${NEW_VERSION}/" template/module.prop
           sed -i "s/^versionCode=.*/versionCode=${NEW_VERSION_CODE}/" template/module.prop
           
-          # Cập nhật update.json ở root
+          # Cập nhật update.json
           sed -i "s/\"version\": \".*\"/\"version\": \"${NEW_VERSION}\"/" update.json
           sed -i "s/\"versionCode\": \".*\"/\"versionCode\": \"${NEW_VERSION_CODE}\"/" update.json
           
-          # Set output cho các bước sau
+          # Tạo changelog từ 5 commit gần nhất
+          CHANGELOG_ENTRY="## v${NEW_VERSION} - $(date +'%Y-%m-%d')\n\n"
+          CHANGELOG_ENTRY="${CHANGELOG_ENTRY}### Changes\n"
+          
+          # Lấy 5 commit gần nhất (trừ commit bump version nếu có)
+          COMMITS=$(git log --pretty=format:"- %s" -n 5)
+          CHANGELOG_ENTRY="${CHANGELOG_ENTRY}${COMMITS}\n\n"
+          
+          # Ghi vào CHANGELOG.md
+          echo -e "${CHANGELOG_ENTRY}" > temp_changelog.md
+          cat CHANGELOG.md >> temp_changelog.md 2>/dev/null || true
+          mv temp_changelog.md CHANGELOG.md
+          
           echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "new_version_code=${NEW_VERSION_CODE}" >> $GITHUB_OUTPUT
 
-      - name: Commit version bump
+      - name: Commit version bump and changelog
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add template/module.prop update.json
+          git add template/module.prop update.json CHANGELOG.md
           git commit -m "chore: bump version to v${{ steps.bump_version.outputs.new_version }} [skip ci]" || echo "No changes to commit"
           git push || echo "No changes to push"
 
+      # Các bước build (ARMv7, ARMv8, x86, x86_64) - giữ nguyên
       - name: Build ARMv7 (32-bit)
         run: |
           mkdir -p build/armv7
@@ -122,7 +144,9 @@ jobs:
           name: v${{ steps.bump_version.outputs.new_version }}
           body: |
             ## KernelEnhancer v${{ steps.bump_version.outputs.new_version }}
-            **Full Changelog**: https://github.com/d224407/KernelEnhancer-RE/commits
+            
+            📦 **Download**: KernelEnhancer.zip
+            🔗 **Full Changelog**: https://github.com/d224407/KernelEnhancer-RE/blob/main/CHANGELOG.md
           draft: false
           prerelease: false
           files: KernelEnhancer.zip
