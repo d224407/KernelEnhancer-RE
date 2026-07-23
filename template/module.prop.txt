@@ -1,0 +1,7 @@
+id=kernel_optimizer
+name=Android Kernel Optimizer
+version=v7.0
+versionCode=70
+author=d224407
+description=Optimize kernel performance (VM, scheduler, I/O, CPU governor)
+updateJson=https://github.com/d224407/KernelEnhancer-RE/blob/main/update.json

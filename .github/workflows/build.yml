@@ -1,7 +1,8 @@
-name: Build
+name: Build KernelEnhancer
 
 on:
   push:
+    branches: [ main, master ]
   workflow_dispatch:
   release:
     types: [ published ]
@@ -11,18 +12,54 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Tập hợp các cờ ép xung tối ưu dung lượng (Ultra Size Optimization)
       CFLAGS: "-Oz -flto -ffunction-sections -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -Wl,--gc-sections -s"
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
-          ndk-version: r26d # NDK r26d ổn định và tối ưu tốt cho C/C++ thuần
+          ndk-version: r26d
+
+      - name: Bump version
+        id: bump_version
+        run: |
+          # Đọc version hiện tại từ module.prop
+          VERSION=$(grep "^version=" template/module.prop | cut -d'=' -f2 | sed 's/v//')
+          VERSION_CODE=$(grep "^versionCode=" template/module.prop | cut -d'=' -f2)
+          
+          # Tăng version lên 1
+          NEW_VERSION=$((VERSION + 1))
+          NEW_VERSION_CODE=$((VERSION_CODE + 1))
+          
+          echo "Old version: v${VERSION} (code: ${VERSION_CODE})"
+          echo "New version: v${NEW_VERSION} (code: ${NEW_VERSION_CODE})"
+          
+          # Cập nhật module.prop
+          sed -i "s/^version=v.*/version=v${NEW_VERSION}/" template/module.prop
+          sed -i "s/^versionCode=.*/versionCode=${NEW_VERSION_CODE}/" template/module.prop
+          
+          # Cập nhật update.json ở root
+          sed -i "s/\"version\": \".*\"/\"version\": \"${NEW_VERSION}\"/" update.json
+          sed -i "s/\"versionCode\": \".*\"/\"versionCode\": \"${NEW_VERSION_CODE}\"/" update.json
+          
+          # Set output cho các bước sau
+          echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "new_version_code=${NEW_VERSION_CODE}" >> $GITHUB_OUTPUT
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add template/module.prop update.json
+          git commit -m "chore: bump version to v${{ steps.bump_version.outputs.new_version }} [skip ci]" || echo "No changes to commit"
+          git push || echo "No changes to push"
 
       - name: Build ARMv7 (32-bit)
         run: |
@@ -65,35 +102,41 @@ jobs:
           MODULE_DIR="KernelEnhancer"
           mkdir -p "$MODULE_DIR/system/bin"
           
-          # Copy template an toàn
           cp -r template/* "$MODULE_DIR/" 2>/dev/null || true
           
-          # Đưa tất cả các kiến trúc vào
           cp build/armv7/kernelenhancer "$MODULE_DIR/system/bin/kernelenhancer_32"
           cp build/armv8/kernelenhancer "$MODULE_DIR/system/bin/kernelenhancer_64"
           cp build/x86/kernelenhancer "$MODULE_DIR/system/bin/kernelenhancer_x86"
           cp build/x86_64/kernelenhancer "$MODULE_DIR/system/bin/kernelenhancer_x64"
           
-          # Phân quyền an toàn
           chmod 755 "$MODULE_DIR/system/bin/"*
           find "$MODULE_DIR" -type f -name "*.sh" -exec chmod 755 {} +
           
-          # Nén ở mức cao nhất (-r9)
           cd "$MODULE_DIR" && zip -r9 "../KernelEnhancer.zip" . && cd ..
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.bump_version.outputs.new_version }}
+          name: v${{ steps.bump_version.outputs.new_version }}
+          body: |
+            ## KernelEnhancer v${{ steps.bump_version.outputs.new_version }}
+            
+            ### Changes
+            - Auto-built from latest commit
+            - Version bumped automatically
+            
+            ### Download
+            - Flash via Magisk Manager
+          draft: false
+          prerelease: false
+          files: KernelEnhancer.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: KernelEnhancer
           path: KernelEnhancer.zip
-
-      - name: Upload to release
-        if: github.event_name == 'release'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./KernelEnhancer.zip
-          asset_name: KernelEnhancer-${{ github.ref_name }}.zip
-          asset_content_type: application/zip
