@@ -1,3 +1,9 @@
+## v7.3 - 2026-07-25
+
+### Changes
+- Update CHANGELOG.md
+
+
 ## v7.2 - 2026-07-23
 
 ### Changes
