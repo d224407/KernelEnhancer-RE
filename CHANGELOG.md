@@ -1,3 +1,9 @@
+## v7.4 - 2026-08-05
+
+### Changes
+- added more tweaks
+
+
 ## v7.3 - 2026-07-25
 
 ### Changes
