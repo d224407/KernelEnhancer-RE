@@ -1,3 +1,9 @@
+## v7.6 - 2026-08-05
+
+### Changes
+- Merge pull request #2 from d224407/test
+
+
 ## v7.5 - 2026-08-05
 
 ### Changes
