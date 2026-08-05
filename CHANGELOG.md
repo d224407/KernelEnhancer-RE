@@ -1,3 +1,9 @@
+## v7.5 - 2026-08-05
+
+### Changes
+- removed residuals
+
+
 ## v7.4 - 2026-08-05
 
 ### Changes
