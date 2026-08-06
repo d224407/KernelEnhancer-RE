@@ -1,3 +1,9 @@
+## v7.8 - 2026-08-06
+
+### Changes
+- fix aggressive tweaks
+
+
 ## v7.7 - 2026-08-06
 
 ### Changes
