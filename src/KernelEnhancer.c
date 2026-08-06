@@ -14,40 +14,31 @@
 #include <fcntl.h>
 #include <stdint.h>
 
-// ---------- Hằng số ----------
 #define LOG_FILE   "/data/local/tmp/kernelenhancer.log"
-#define MAX_PATH    PATH_MAX
-#define MAX_LINE    512
-#define MAX_CMD     1024
-#define SCHED_PERIOD_NS 1000000LL    // 1ms
+#define MAX_PATH   PATH_MAX
+#define MAX_LINE   512
+#define MAX_CMD    1024
+#define SCHED_PERIOD_NS 1000000LL
 #define SCHED_TASKS 10
 
-// ---------- Hàm log an toàn ----------
 void log_msg(const char *fmt, ...) {
     char buf[MAX_LINE];
     time_t t;
     struct tm *tm_info;
     va_list args;
     FILE *fp = NULL;
-
     time(&t);
     tm_info = localtime(&t);
-    if (!tm_info) {
-        snprintf(buf, sizeof(buf), "[??:??:??] ");
-    } else {
-        strftime(buf, sizeof(buf), "[%H:%M:%S] ", tm_info);
-    }
-
+    if (!tm_info) snprintf(buf, sizeof(buf), "[??:??:??] ");
+    else strftime(buf, sizeof(buf), "[%H:%M:%S] ", tm_info);
     va_start(args, fmt);
     vsnprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), fmt, args);
     va_end(args);
-
     printf("%s\n", buf);
     fp = fopen(LOG_FILE, "a");
     if (fp) { fprintf(fp, "%s\n", buf); fclose(fp); }
 }
 
-// ---------- Ghi file an toàn, có đọc lại kiểm tra ----------
 int safe_write_file(const char *path, const char *value) {
     if (!path || !value) return -1;
     FILE *fp = NULL;
@@ -55,18 +46,15 @@ int safe_write_file(const char *path, const char *value) {
     int ret = -1;
     mode_t old_mode = 0;
     char readback[MAX_LINE] = {0};
-
     if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
-        log_msg("SKIP | %s → %s (file not found or not regular)", path, value);
+        log_msg("SKIP | %s → %s (file not found)", path, value);
         return -1;
     }
-
     old_mode = st.st_mode & 0777;
     if (access(path, W_OK) != 0) chmod(path, old_mode | S_IWUSR);
-
     fp = fopen(path, "w");
     if (!fp) {
-        log_msg("FAIL | %s → %s (cannot open for write)", path, value);
+        log_msg("FAIL | %s → %s (cannot open)", path, value);
         goto restore;
     }
     if (fprintf(fp, "%s\n", value) < 0) {
@@ -77,45 +65,35 @@ int safe_write_file(const char *path, const char *value) {
     }
     fclose(fp);
     fp = NULL;
-
-    // Đọc lại để xác nhận
     fp = fopen(path, "r");
     if (fp) {
         if (fgets(readback, sizeof(readback), fp)) {
             size_t len = strlen(readback);
-            while (len > 0 && (readback[len-1] == '\n' || readback[len-1] == '\r'))
-                readback[--len] = '\0';
+            while (len > 0 && (readback[len-1] == '\n' || readback[len-1] == '\r')) readback[--len] = '\0';
             if (strcmp(readback, value) == 0) {
                 log_msg("OK   | %s → %s", path, value);
                 ret = 0;
-            } else {
-                log_msg("FAIL | %s → %s (readback: %s)", path, value, readback);
-            }
+            } else log_msg("FAIL | %s → %s (readback: %s)", path, value, readback);
         }
         fclose(fp);
         fp = NULL;
     }
-
 restore:
     if (old_mode > 0) chmod(path, old_mode);
     return ret;
 }
 
-// ---------- Kiểm tra chuỗi trong file ----------
 int file_contains(const char *path, const char *needle) {
     if (!path || !needle) return 0;
     FILE *fp = fopen(path, "r");
     if (!fp) return 0;
     char line[MAX_LINE];
     int found = 0;
-    while (fgets(line, sizeof(line), fp)) {
-        if (strstr(line, needle)) { found = 1; break; }
-    }
+    while (fgets(line, sizeof(line), fp)) if (strstr(line, needle)) { found = 1; break; }
     fclose(fp);
     return found;
 }
 
-// ---------- Lấy output của lệnh (prop) ----------
 int get_prop_int(const char *prop, int default_val) {
     char cmd[MAX_CMD];
     snprintf(cmd, sizeof(cmd), "getprop %s 2>/dev/null", prop);
@@ -123,60 +101,38 @@ int get_prop_int(const char *prop, int default_val) {
     if (!fp) return default_val;
     char buf[32] = {0};
     if (fgets(buf, sizeof(buf), fp)) {
-        if (strcmp(buf, "1\n") == 0 || strcmp(buf, "1") == 0) {
-            pclose(fp);
-            return 1;
-        }
+        if (strcmp(buf, "1\n") == 0 || strcmp(buf, "1") == 0) { pclose(fp); return 1; }
     }
     pclose(fp);
     return default_val;
 }
 
-// ---------- Chờ boot (Android) ----------
 void wait_for_boot(void) {
     log_msg("Waiting for boot...");
     int retry = 0;
-    while (retry < 30) {
-        if (get_prop_int("sys.boot_completed", 0) == 1) break;
-        sleep(2);
-        retry++;
-    }
+    while (retry < 30) { if (get_prop_int("sys.boot_completed", 0) == 1) break; sleep(2); retry++; }
     retry = 0;
     while (retry < 20) {
         char cmd[MAX_CMD];
         snprintf(cmd, sizeof(cmd), "getprop init.svc.bootanim 2>/dev/null");
         FILE *fp = popen(cmd, "r");
-        if (fp) {
-            char buf[32] = {0};
-            if (fgets(buf, sizeof(buf), fp) && strstr(buf, "stopped")) {
-                pclose(fp);
-                break;
-            }
-            pclose(fp);
-        }
+        if (fp) { char buf[32] = {0}; if (fgets(buf, sizeof(buf), fp) && strstr(buf, "stopped")) { pclose(fp); break; } pclose(fp); }
         sleep(2);
         retry++;
     }
     sleep(3);
 }
 
-// ---------- Lấy RAM ----------
 long get_total_mem_mb(void) {
     FILE *fp = fopen("/proc/meminfo", "r");
     if (!fp) return 0;
     char line[MAX_LINE];
     long kb = 0;
-    while (fgets(line, sizeof(line), fp)) {
-        if (strncmp(line, "MemTotal:", 9) == 0) {
-            sscanf(line + 9, "%ld", &kb);
-            break;
-        }
-    }
+    while (fgets(line, sizeof(line), fp)) if (strncmp(line, "MemTotal:", 9) == 0) { sscanf(line + 9, "%ld", &kb); break; }
     fclose(fp);
     return kb / 1024;
 }
 
-// ---------- Hàm áp dụng từng phần ----------
 void apply_cpu_online(void) {
     DIR *dir = opendir("/sys/devices/system/cpu");
     if (!dir) return;
@@ -195,15 +151,10 @@ void apply_vm(void) {
     long mb = get_total_mem_mb();
     if (mb <= 0) return;
     int swappiness, dirty_ratio, dirty_bg, vfs_pressure, watermark;
-    if (mb < 4096) {
-        swappiness = 70; dirty_ratio = 18; dirty_bg = 5; vfs_pressure = 50; watermark = 149;
-    } else if (mb < 6144) {
-        swappiness = 60; dirty_ratio = 22; dirty_bg = 6; vfs_pressure = 60; watermark = 177;
-    } else if (mb < 8192) {
-        swappiness = 35; dirty_ratio = 25; dirty_bg = 8; vfs_pressure = 60; watermark = 191;
-    } else {
-        swappiness = 35; dirty_ratio = 28; dirty_bg = 10; vfs_pressure = 55; watermark = 209;
-    }
+    if (mb < 4096) { swappiness = 70; dirty_ratio = 18; dirty_bg = 5; vfs_pressure = 50; watermark = 149; }
+    else if (mb < 6144) { swappiness = 60; dirty_ratio = 22; dirty_bg = 6; vfs_pressure = 60; watermark = 177; }
+    else if (mb < 8192) { swappiness = 35; dirty_ratio = 25; dirty_bg = 8; vfs_pressure = 60; watermark = 191; }
+    else { swappiness = 35; dirty_ratio = 28; dirty_bg = 10; vfs_pressure = 55; watermark = 209; }
     char buf[16];
     snprintf(buf, sizeof(buf), "%d", swappiness); safe_write_file("/proc/sys/vm/swappiness", buf);
     snprintf(buf, sizeof(buf), "%d", dirty_ratio); safe_write_file("/proc/sys/vm/dirty_ratio", buf);
@@ -240,23 +191,13 @@ void apply_scheduler(void) {
 void apply_stune(void) {
     const char *paths[] = {"/dev/stune", "/sys/fs/cgroup/stune", "/sys/fs/cgroup/cpu/stune", NULL};
     const char *base = NULL;
-    for (int i = 0; paths[i]; i++) {
-        struct stat st;
-        if (stat(paths[i], &st) == 0 && S_ISDIR(st.st_mode)) {
-            base = paths[i];
-            break;
-        }
-    }
+    for (int i = 0; paths[i]; i++) { struct stat st; if (stat(paths[i], &st) == 0 && S_ISDIR(st.st_mode)) { base = paths[i]; break; } }
     if (!base) return;
     char path[MAX_PATH];
-    snprintf(path, sizeof(path), "%s/top-app/schedtune.boost", base);
-    safe_write_file(path, "3");
-    snprintf(path, sizeof(path), "%s/top-app/schedtune.prefer_idle", base);
-    safe_write_file(path, "1");
-    snprintf(path, sizeof(path), "%s/foreground/schedtune.boost", base);
-    safe_write_file(path, "0");
-    snprintf(path, sizeof(path), "%s/background/schedtune.boost", base);
-    safe_write_file(path, "-10");
+    snprintf(path, sizeof(path), "%s/top-app/schedtune.boost", base); safe_write_file(path, "3");
+    snprintf(path, sizeof(path), "%s/top-app/schedtune.prefer_idle", base); safe_write_file(path, "1");
+    snprintf(path, sizeof(path), "%s/foreground/schedtune.boost", base); safe_write_file(path, "0");
+    snprintf(path, sizeof(path), "%s/background/schedtune.boost", base); safe_write_file(path, "-10");
 }
 
 void apply_cpu_boost(void) {
@@ -276,8 +217,7 @@ void apply_cpu_boost(void) {
             long half = max_freq / 2;
             char pair[32];
             snprintf(pair, sizeof(pair), " %s:%ld", ent->d_name + 3, half);
-            if (strlen(boost_freq) + strlen(pair) + 1 < sizeof(boost_freq))
-                strcat(boost_freq, pair);
+            if (strlen(boost_freq) + strlen(pair) + 1 < sizeof(boost_freq)) strcat(boost_freq, pair);
         }
         fclose(fp);
     }
@@ -375,14 +315,10 @@ void apply_governor(void) {
         char sched_dir[MAX_PATH];
         snprintf(sched_dir, sizeof(sched_dir), "/sys/devices/system/cpu/cpufreq/%s/schedutil", ent->d_name);
         if (access(sched_dir, F_OK) != 0) snprintf(sched_dir, sizeof(sched_dir), "/sys/devices/system/cpu/cpufreq/%s", ent->d_name);
-        snprintf(path, sizeof(path), "%s/rate_limit_us", sched_dir);
-        safe_write_file(path, "500");
-        snprintf(path, sizeof(path), "%s/up_rate_limit_us", sched_dir);
-        safe_write_file(path, "500");
-        snprintf(path, sizeof(path), "%s/down_rate_limit_us", sched_dir);
-        safe_write_file(path, "500");
-        snprintf(path, sizeof(path), "%s/hispeed_load", sched_dir);
-        safe_write_file(path, "90");
+        snprintf(path, sizeof(path), "%s/rate_limit_us", sched_dir); safe_write_file(path, "500");
+        snprintf(path, sizeof(path), "%s/up_rate_limit_us", sched_dir); safe_write_file(path, "500");
+        snprintf(path, sizeof(path), "%s/down_rate_limit_us", sched_dir); safe_write_file(path, "500");
+        snprintf(path, sizeof(path), "%s/hispeed_load", sched_dir); safe_write_file(path, "90");
     }
     closedir(dir);
 }
@@ -403,26 +339,14 @@ void apply_debug(void) {
     }
 }
 
-// ---------- Main ----------
 int main(void) {
-    // Xoá log cũ
     FILE *fp = fopen(LOG_FILE, "w");
     if (fp) fclose(fp);
-
     log_msg("==========================================");
     log_msg("KERNELENHANCER START: %s", ctime(&(time_t){time(NULL)}));
     log_msg("==========================================");
-
-    if (geteuid() != 0) {
-        log_msg("ERROR: Need root");
-        return 1;
-    }
-
-    // Phát hiện Android và chờ boot
-    if (access("/system/bin/getprop", F_OK) == 0) {
-        wait_for_boot();
-    }
-
+    if (geteuid() != 0) { log_msg("ERROR: Need root"); return 1; }
+    if (access("/system/bin/getprop", F_OK) == 0) wait_for_boot();
     apply_cpu_online();
     apply_vm();
     apply_scheduler();
@@ -435,7 +359,6 @@ int main(void) {
     apply_governor();
     apply_network();
     apply_debug();
-
     sync();
     log_msg("==========================================");
     log_msg("KERNELENHANCER COMPLETED: %s", ctime(&(time_t){time(NULL)}));
