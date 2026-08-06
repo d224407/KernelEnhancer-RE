@@ -184,8 +184,8 @@ void apply_scheduler(void) {
     safe_write_file("/proc/sys/kernel/sched_schedstats", "0");
     safe_write_file("/proc/sys/kernel/sched_downmigrate", "35 45");
     safe_write_file("/proc/sys/kernel/sched_upmigrate", "50 60");
-    safe_write_file("/proc/sys/kernel/sched_util_clamp_min", "384");
-    safe_write_file("/proc/sys/kernel/sched_util_clamp_min_rt_default", "512");
+    safe_write_file("/proc/sys/kernel/sched_util_clamp_min", "256"); /* hạ từ 384 -> 256: 384 ép core chạy tần số khá cao ngay cả lúc idle nhẹ, dễ gây hao pin/nóng máy trên thiết bị yếu hơn */
+    safe_write_file("/proc/sys/kernel/sched_util_clamp_min_rt_default", "384"); /* hạ tương ứng để đồng nhất với mức trên */
 }
 
 void apply_stune(void) {
@@ -315,9 +315,11 @@ void apply_governor(void) {
         char sched_dir[MAX_PATH];
         snprintf(sched_dir, sizeof(sched_dir), "/sys/devices/system/cpu/cpufreq/%s/schedutil", ent->d_name);
         if (access(sched_dir, F_OK) != 0) snprintf(sched_dir, sizeof(sched_dir), "/sys/devices/system/cpu/cpufreq/%s", ent->d_name);
-        snprintf(path, sizeof(path), "%s/rate_limit_us", sched_dir); safe_write_file(path, "500");
-        snprintf(path, sizeof(path), "%s/up_rate_limit_us", sched_dir); safe_write_file(path, "500");
-        snprintf(path, sizeof(path), "%s/down_rate_limit_us", sched_dir); safe_write_file(path, "500");
+        /* 500us quá thấp so với mặc định thường thấy (10000-20000us): ép CPU đổi tần số liên tục,
+           dễ gây giật/đơ tạm thời trên kernel không handle tốt. Nâng lên mức vẫn nhạy nhưng an toàn hơn. */
+        snprintf(path, sizeof(path), "%s/rate_limit_us", sched_dir); safe_write_file(path, "2000");
+        snprintf(path, sizeof(path), "%s/up_rate_limit_us", sched_dir); safe_write_file(path, "1000");
+        snprintf(path, sizeof(path), "%s/down_rate_limit_us", sched_dir); safe_write_file(path, "20000");
         snprintf(path, sizeof(path), "%s/hispeed_load", sched_dir); safe_write_file(path, "90");
     }
     closedir(dir);
@@ -326,7 +328,7 @@ void apply_governor(void) {
 void apply_network(void) {
     safe_write_file("/proc/sys/net/ipv4/tcp_ecn", "1");
     safe_write_file("/proc/sys/net/ipv4/tcp_fastopen", "3");
-    safe_write_file("/proc/sys/net/ipv4/tcp_syncookies", "0");
+    safe_write_file("/proc/sys/net/ipv4/tcp_syncookies", "1"); /* giữ bật để chống SYN flood, tắt (0) không mang lại lợi ích rõ rệt trên mobile mà lại tăng rủi ro */
 }
 
 void apply_debug(void) {
@@ -340,10 +342,19 @@ void apply_debug(void) {
 }
 
 int main(void) {
-    FILE *fp = fopen(LOG_FILE, "w");
-    if (fp) fclose(fp);
+    /* Giữ log cũ giữa các lần chạy để tiện đối chiếu lịch sử; nếu file vượt 1MB thì reset để tránh phình to vô hạn */
+    struct stat log_st;
+    if (stat(LOG_FILE, &log_st) == 0 && log_st.st_size > 1024 * 1024) {
+        FILE *fp = fopen(LOG_FILE, "w");
+        if (fp) fclose(fp);
+    }
+    time_t now = time(NULL);
+    char time_buf[64];
+    struct tm *tm_now = localtime(&now);
+    if (tm_now) strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_now);
+    else snprintf(time_buf, sizeof(time_buf), "unknown");
     log_msg("==========================================");
-    log_msg("KERNELENHANCER START: %s", ctime(&(time_t){time(NULL)}));
+    log_msg("KERNELENHANCER START: %s", time_buf);
     log_msg("==========================================");
     if (geteuid() != 0) { log_msg("ERROR: Need root"); return 1; }
     if (access("/system/bin/getprop", F_OK) == 0) wait_for_boot();
@@ -360,8 +371,12 @@ int main(void) {
     apply_network();
     apply_debug();
     sync();
+    now = time(NULL);
+    tm_now = localtime(&now);
+    if (tm_now) strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_now);
+    else snprintf(time_buf, sizeof(time_buf), "unknown");
     log_msg("==========================================");
-    log_msg("KERNELENHANCER COMPLETED: %s", ctime(&(time_t){time(NULL)}));
+    log_msg("KERNELENHANCER COMPLETED: %s", time_buf);
     log_msg("Log saved to: %s", LOG_FILE);
     log_msg("==========================================");
     return 0;
