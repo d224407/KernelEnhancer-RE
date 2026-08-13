@@ -1,7 +1,7 @@
 id=kernel_optimizer
 name=KernelEnhancer
-version=v7.8
-versionCode=78
+version=v7.9
+versionCode=79
 author=d224407
 description=Optimize kernel performance (VM, scheduler, I/O, CPU governor)
 updateJson=https://github.com/d224407/KernelEnhancer-RE/blob/main/update.json
