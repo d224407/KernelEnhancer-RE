@@ -21,8 +21,8 @@ case "$ARCH" in
         # Fallback: try all
         if [ -f "$MODDIR/system/bin/kernelenhancer_64" ]; then
             BIN="$MODDIR/system/bin/kernelenhancer_64"
-        elif [ -f "$MODDIR/system/bin/kernelenhancer_x86_64" ]; then
-            BIN="$MODDIR/system/bin/kernelenhancer_x86_64"
+        elif [ -f "$MODDIR/system/bin/kernelenhancer_x64" ]; then
+            BIN="$MODDIR/system/bin/kernelenhancer_x64"
         elif [ -f "$MODDIR/system/bin/kernelenhancer_32" ]; then
             BIN="$MODDIR/system/bin/kernelenhancer_32"
         elif [ -f "$MODDIR/system/bin/kernelenhancer_x86" ]; then
