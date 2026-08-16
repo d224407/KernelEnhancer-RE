@@ -32,7 +32,7 @@ jobs:
         uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
-          ndk-version: r26d
+          ndk-version: r29
 
       - name: Find source variants
         id: variants
@@ -170,3 +170,26 @@ jobs:
             find "$MODULE_DIR" -type f -name "*.sh" -exec chmod 755 {} +
             cd "$MODULE_DIR" && zip -r9 "../KernelEnhancer${variant:+-$variant}.zip" . && cd ..
           done
+
+      - name: Create Release
+        if: github.ref_name == 'main' || github.ref_name == 'master'
+        uses: softprops/action-gh-release@master
+        with:
+          tag_name: v${{ steps.bump_version.outputs.new_version }}
+          name: v${{ steps.bump_version.outputs.new_version }}
+          body: |
+            ## KernelEnhancer v${{ steps.bump_version.outputs.new_version }}
+            📦 **Downloads**:
+            ${{ steps.variants.outputs.variants }}
+            🔗 **Changelog**: https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md
+          draft: false
+          prerelease: false
+          files: KernelEnhancer*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@main
+        with:
+          name: KernelEnhancer-Builds
+          path: KernelEnhancer*.zip
