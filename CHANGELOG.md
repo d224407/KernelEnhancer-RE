@@ -1,15 +1,3 @@
-## v7.10 - 2026-08-16
-
-### Changes
-- Update GitHub Actions
-
-
-## v7.9 - 2026-08-13
-
-### Changes
-- Fix x64
-
-
 ## v7.8 - 2026-08-06
 
 ### Changes
@@ -32,11 +20,6 @@
 
 ### Changes
 - removed residuals
-
-
-## v7.4 - 2026-08-05
-
-### Changes
 - added more tweaks
 
 
@@ -44,17 +27,6 @@
 
 ### Changes
 - Update CHANGELOG.md
-
-
-## v7.2 - 2026-07-23
-
-### Changes
-- Fix changelog automation
-
-
-## v7.1 - 2026-07-23
-
-### Changes
 - Fix github releases
 - Improved memory safety
 - Bump version to 7.1
