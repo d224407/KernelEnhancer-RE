@@ -1,3 +1,9 @@
+## v7.10 - 2026-08-16
+
+### Changes
+- Update GitHub Actions
+
+
 ## v7.9 - 2026-08-13
 
 ### Changes
