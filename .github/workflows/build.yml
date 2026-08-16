@@ -4,6 +4,23 @@ on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create release?'
+        required: true
+        default: 'yes'
+        type: choice
+        options:
+          - yes
+          - no
+      major_bump:
+        description: 'Major version bump?'
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - yes
+          - no
   release:
     types: [ published ]
 
@@ -27,56 +44,96 @@ jobs:
         with:
           ndk-version: r26d
 
-      - name: Bump version and generate changelog
+      - name: Find source variants
+        id: variants
+        run: |
+          VARIANTS=()
+          for f in src/KernelEnhancer*.c; do
+            base=$(basename "$f" .c)
+            suffix=${base#KernelEnhancer}
+            if [[ -z "$suffix" ]]; then
+              VARIANTS+=("main")
+            else
+              suffix=${suffix#-}
+              VARIANTS+=("$suffix")
+            fi
+          done
+          if [ ${#VARIANTS[@]} -eq 0 ]; then
+            echo "No source files found!"
+            exit 1
+          fi
+          VARIANTS_STR=$(IFS=,; echo "${VARIANTS[*]}")
+          echo "variants=$VARIANTS_STR" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog and bump version
         id: bump_version
         run: |
-          # Lấy version hiện tại
           VERSION_RAW=$(grep "^version=" template/module.prop | cut -d'=' -f2)
           VERSION=${VERSION_RAW#v}
           VERSION_CODE=$(grep "^versionCode=" template/module.prop | cut -d'=' -f2)
-          
-          # Tăng version
-          if [[ "$VERSION" == *"."* ]]; then
-            MAJOR=$(echo "$VERSION" | cut -d'.' -f1)
-            MINOR=$(echo "$VERSION" | cut -d'.' -f2)
-            NEW_MINOR=$((MINOR + 1))
-            NEW_VERSION="${MAJOR}.${NEW_MINOR}"
+
+          MAJOR=$(echo "$VERSION" | cut -d'.' -f1)
+          MINOR=$(echo "$VERSION" | cut -d'.' -f2)
+          if [[ -z "$MINOR" ]]; then MINOR=0; fi
+
+          MAJOR_BUMP="${{ github.event.inputs.major_bump }}"
+          if [[ "$MAJOR_BUMP" == "yes" ]]; then
+            NEW_MAJOR=$((MAJOR + 1))
+            NEW_MINOR=0
+            NEW_VERSION_CODE=$((VERSION_CODE + 10))
           else
-            NEW_VERSION="${VERSION}.0"
+            NEW_MAJOR=$MAJOR
+            NEW_MINOR=$((MINOR + 1))
+            NEW_VERSION_CODE=$((VERSION_CODE + 1))
           fi
-          NEW_VERSION_CODE=$((VERSION_CODE + 1))
-          
-          echo "Old version: v${VERSION} (code: ${VERSION_CODE})"
-          echo "New version: v${NEW_VERSION} (code: ${NEW_VERSION_CODE})"
-          
-          # Cập nhật module.prop và update.json
+          NEW_VERSION="${NEW_MAJOR}.${NEW_MINOR}"
+
           sed -i "s/^version=v.*/version=v${NEW_VERSION}/" template/module.prop
           sed -i "s/^versionCode=.*/versionCode=${NEW_VERSION_CODE}/" template/module.prop
           sed -i "s/\"version\": \".*\"/\"version\": \"${NEW_VERSION}\"/" update.json
           sed -i "s/\"versionCode\": \".*\"/\"versionCode\": \"${NEW_VERSION_CODE}\"/" update.json
-          
-          # --- CHANGELOG: CHỈ THÊM COMMIT MỚI NHẤT CHƯA CÓ ---
-          # Lấy commit message mới nhất
-          LATEST_COMMIT=$(git log -1 --pretty=format:"- %s")
-          
-          # Tạo entry mới
-          NEW_ENTRY="## v${NEW_VERSION} - $(date +'%Y-%m-%d')\n\n### Changes\n${LATEST_COMMIT}\n\n"
-          
-          # Kiểm tra nếu CHANGELOG.md chưa tồn tại
-          if [ ! -f "CHANGELOG.md" ]; then
-            echo "# Changelog\n\n" > CHANGELOG.md
-          fi
-          
-          # Kiểm tra xem commit mới nhất đã có trong CHANGELOG chưa
-          if grep -q "${LATEST_COMMIT}" CHANGELOG.md; then
-            echo "Commit already in changelog, skipping..."
+
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [[ -n "$LATEST_TAG" ]]; then
+            COMMITS=$(git log "$LATEST_TAG"..HEAD --pretty=format:"%s|%ad" --date=short)
           else
-            # Thêm entry mới vào đầu file
-            echo -e "${NEW_ENTRY}" > temp_changelog.md
-            cat CHANGELOG.md >> temp_changelog.md
-            mv temp_changelog.md CHANGELOG.md
+            COMMITS=$(git log --pretty=format:"%s|%ad" --date=short)
           fi
-          
+
+          echo "# Changelog" > CHANGELOG_new.md
+          echo "" >> CHANGELOG_new.md
+          echo "## v${NEW_VERSION} - $(date +'%Y-%m-%d')" >> CHANGELOG_new.md
+          echo "" >> CHANGELOG_new.md
+          echo "### Changes" >> CHANGELOG_new.md
+
+          declare -A DATE_MAP
+          while IFS= read -r line; do
+            if [[ -z "$line" ]]; then continue; fi
+            msg="${line%|*}"
+            date="${line#*|}"
+            if [[ "$msg" == !* ]]; then continue; fi
+            if [[ -z "${DATE_MAP[$date]}" ]]; then
+              DATE_MAP[$date]="$msg"
+            else
+              DATE_MAP[$date]="${DATE_MAP[$date]}\n- $msg"
+            fi
+          done <<< "$COMMITS"
+
+          for date in "${!DATE_MAP[@]}"; do
+            echo "#### $date" >> CHANGELOG_new.md
+            echo "- ${DATE_MAP[$date]}" >> CHANGELOG_new.md
+            echo "" >> CHANGELOG_new.md
+          done
+
+          if [[ ${#DATE_MAP[@]} -eq 0 ]]; then
+            echo "- No new changes." >> CHANGELOG_new.md
+          fi
+
+          if [[ -f "CHANGELOG.md" ]]; then
+            tail -n +2 CHANGELOG.md >> CHANGELOG_new.md
+          fi
+          mv CHANGELOG_new.md CHANGELOG.md
+
           echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "new_version_code=${NEW_VERSION_CODE}" >> $GITHUB_OUTPUT
 
@@ -88,74 +145,71 @@ jobs:
           git commit -m "chore: bump version to v${{ steps.bump_version.outputs.new_version }} [skip ci]" || echo "No changes to commit"
           git push || echo "No changes to push"
 
-      # ---- BUILD (giữ nguyên) ----
-      - name: Build ARMv7 (32-bit)
+      - name: Build all variants
         run: |
-          mkdir -p build/armv7
           NDK=${{ steps.setup-ndk.outputs.ndk-path }}
-          CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang"
-          $CLANG $CFLAGS -o build/armv7/kernelenhancer src/KernelEnhancer.c
-          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-all build/armv7/kernelenhancer
-          echo "ARMv7 size: $(ls -lh build/armv7/kernelenhancer | awk '{print $5}')"
+          ARCHS=("armv7" "armv8" "x86" "x86_64")
+          declare -A CLANG
+          CLANG["armv7"]="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang"
+          CLANG["armv8"]="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
+          CLANG["x86"]="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/i686-linux-android21-clang"
+          CLANG["x86_64"]="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang"
 
-      - name: Build ARMv8 (64-bit)
-        run: |
-          mkdir -p build/armv8
-          NDK=${{ steps.setup-ndk.outputs.ndk-path }}
-          CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
-          $CLANG $CFLAGS -o build/armv8/kernelenhancer src/KernelEnhancer.c
-          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-all build/armv8/kernelenhancer
-          echo "ARMv8 size: $(ls -lh build/armv8/kernelenhancer | awk '{print $5}')"
+          VARIANT_LIST=($(echo "${{ steps.variants.outputs.variants }}" | tr ',' ' '))
+          for variant in "${VARIANT_LIST[@]}"; do
+            if [[ "$variant" == "main" ]]; then
+              SRC="src/KernelEnhancer.c"
+            else
+              SRC="src/KernelEnhancer-${variant}.c"
+            fi
+            for arch in "${ARCHS[@]}"; do
+              mkdir -p "build/${arch}/${variant}"
+              ${CLANG[$arch]} $CFLAGS -o "build/${arch}/${variant}/kernelenhancer" "$SRC"
+              "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-all "build/${arch}/${variant}/kernelenhancer"
+            done
+          done
 
-      - name: Build x86 (32-bit)
+      - name: Prepare modules
         run: |
-          mkdir -p build/x86
-          NDK=${{ steps.setup-ndk.outputs.ndk-path }}
-          CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/i686-linux-android21-clang"
-          $CLANG $CFLAGS -o build/x86/kernelenhancer src/KernelEnhancer.c
-          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-all build/x86/kernelenhancer
-          echo "x86 size: $(ls -lh build/x86/kernelenhancer | awk '{print $5}')"
-
-      - name: Build x86_64 (64-bit)
-        run: |
-          mkdir -p build/x86_64
-          NDK=${{ steps.setup-ndk.outputs.ndk-path }}
-          CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang"
-          $CLANG $CFLAGS -o build/x86_64/kernelenhancer src/KernelEnhancer.c
-          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-all build/x86_64/kernelenhancer
-          echo "x86_64 size: $(ls -lh build/x86_64/kernelenhancer | awk '{print $5}')"
-
-      - name: Prepare module
-        run: |
-          MODULE_DIR="KernelEnhancer"
-          mkdir -p "$MODULE_DIR/system/bin"
-          cp -r template/* "$MODULE_DIR/" 2>/dev/null || true
-          cp build/armv7/kernelenhancer "$MODULE_DIR/system/bin/kernelenhancer_32"
-          cp build/armv8/kernelenhancer "$MODULE_DIR/system/bin/kernelenhancer_64"
-          cp build/x86/kernelenhancer "$MODULE_DIR/system/bin/kernelenhancer_x86"
-          cp build/x86_64/kernelenhancer "$MODULE_DIR/system/bin/kernelenhancer_x64"
-          chmod 755 "$MODULE_DIR/system/bin/"*
-          find "$MODULE_DIR" -type f -name "*.sh" -exec chmod 755 {} +
-          cd "$MODULE_DIR" && zip -r9 "../KernelEnhancer.zip" . && cd ..
+          VARIANT_LIST=($(echo "${{ steps.variants.outputs.variants }}" | tr ',' ' '))
+          for variant in "${VARIANT_LIST[@]}"; do
+            MODULE_DIR="KernelEnhancer${variant:+-$variant}"
+            mkdir -p "$MODULE_DIR/system/bin"
+            cp -r template/* "$MODULE_DIR/" 2>/dev/null || true
+            cp "build/armv7/${variant}/kernelenhancer" "$MODULE_DIR/system/bin/kernelenhancer_32"
+            cp "build/armv8/${variant}/kernelenhancer" "$MODULE_DIR/system/bin/kernelenhancer_64"
+            cp "build/x86/${variant}/kernelenhancer" "$MODULE_DIR/system/bin/kernelenhancer_x86"
+            cp "build/x86_64/${variant}/kernelenhancer" "$MODULE_DIR/system/bin/kernelenhancer_x64"
+            chmod 755 "$MODULE_DIR/system/bin/"*
+            find "$MODULE_DIR" -type f -name "*.sh" -exec chmod 755 {} +
+            cd "$MODULE_DIR" && zip -r9 "../KernelEnhancer${variant:+-$variant}.zip" . && cd ..
+          done
 
       - name: Create Release
         id: create_release
+        if: |
+          (github.event.inputs.create_release == 'yes' || github.event_name == 'release') &&
+          (github.ref_name == 'main' || github.ref_name == 'master')
         uses: softprops/action-gh-release@master
         with:
           tag_name: v${{ steps.bump_version.outputs.new_version }}
           name: v${{ steps.bump_version.outputs.new_version }}
           body: |
             ## KernelEnhancer v${{ steps.bump_version.outputs.new_version }}
-            📦 **Download**: KernelEnhancer.zip
-            🔗 **Full Changelog**: https://github.com/d224407/KernelEnhancer-RE/blob/main/CHANGELOG.md
+            📦 **Downloads**:
+            ${{ steps.variants.outputs.variants }}
+            🔗 **Changelog**: https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md
           draft: false
           prerelease: false
-          files: KernelEnhancer.zip
+          files: KernelEnhancer*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload artifact
+      - name: Upload artifacts
+        if: |
+          github.event.inputs.create_release == 'no' ||
+          (github.ref_name != 'main' && github.ref_name != 'master')
         uses: actions/upload-artifact@main
         with:
-          name: KernelEnhancer
-          path: KernelEnhancer.zip
+          name: KernelEnhancer-Builds
+          path: KernelEnhancer*.zip
