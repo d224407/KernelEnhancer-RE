@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.14 - 2026-08-17
+
+### Changes
+#### 2026-08-17
+- removed background functions\n- removed background functions
+
 ## v7.13 - 2026-08-17
 
 ### Changes
