@@ -54,6 +54,7 @@ jobs:
           fi
           VARIANTS_STR=$(IFS=,; echo "${VARIANTS[*]}")
           echo "variants=$VARIANTS_STR" >> $GITHUB_OUTPUT
+          echo "variant_count=${#VARIANTS[@]}" >> $GITHUB_OUTPUT
 
       - name: Generate changelog and bump version
         id: bump_version
@@ -80,9 +81,6 @@ jobs:
 
           sed -i "s/^version=v.*/version=v${NEW_VERSION}/" template/module.prop
           sed -i "s/^versionCode=.*/versionCode=${NEW_VERSION_CODE}/" template/module.prop
-          sed -i "s/\"version\": \".*\"/\"version\": \"${NEW_VERSION}\"/" update.json
-          sed -i "s/\"versionCode\": \".*\"/\"versionCode\": \"${NEW_VERSION_CODE}\"/" update.json
-          sed -i "s|https://github.com/[^/]*/[^/]*/releases/tag/[^/]*/KernelEnhancer.zip|https://github.com/${{ github.repository }}/releases/tag/v${NEW_VERSION}/KernelEnhancer.zip|" update.json
 
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [[ -n "$LATEST_TAG" ]]; then
@@ -123,14 +121,6 @@ jobs:
           echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "new_version_code=${NEW_VERSION_CODE}" >> $GITHUB_OUTPUT
 
-      - name: Commit version bump and changelog
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add template/module.prop update.json CHANGELOG.md
-          git commit -m "chore: bump version to v${{ steps.bump_version.outputs.new_version }} [skip ci]" || echo "No changes to commit"
-          git push || echo "No changes to push"
-
       - name: Build all variants
         run: |
           NDK=${{ steps.setup-ndk.outputs.ndk-path }}
@@ -155,10 +145,15 @@ jobs:
             done
           done
 
-      - name: Prepare modules
+      - name: Prepare modules and update.json for each variant
         run: |
           VARIANT_LIST=($(echo "${{ steps.variants.outputs.variants }}" | tr ',' ' '))
+          NEW_VERSION="${{ steps.bump_version.outputs.new_version }}"
+          NEW_VERSION_CODE="${{ steps.bump_version.outputs.new_version_code }}"
+          REPO="${{ github.repository }}"
+
           for variant in "${VARIANT_LIST[@]}"; do
+            # Tạo module
             MODULE_DIR="KernelEnhancer${variant:+-$variant}"
             mkdir -p "$MODULE_DIR/system/bin"
             cp -r template/* "$MODULE_DIR/" 2>/dev/null || true
@@ -169,7 +164,34 @@ jobs:
             chmod 755 "$MODULE_DIR/system/bin/"*
             find "$MODULE_DIR" -type f -name "*.sh" -exec chmod 755 {} +
             cd "$MODULE_DIR" && zip -r9 "../KernelEnhancer${variant:+-$variant}.zip" . && cd ..
+
+            # Tạo update.json cho từng variant
+            if [[ "$variant" == "main" ]]; then
+              ZIP_NAME="KernelEnhancer.zip"
+              JSON_NAME="update.json"
+            else
+              ZIP_NAME="KernelEnhancer-${variant}.zip"
+              JSON_NAME="update-${variant}.json"
+            fi
+
+            cat > "$JSON_NAME" << EOF
+{
+  "version": "${NEW_VERSION}",
+  "versionCode": "${NEW_VERSION_CODE}",
+  "zipUrl": "https://github.com/${REPO}/releases/tag/v${NEW_VERSION}/${ZIP_NAME}",
+  "changelog": "https://github.com/${REPO}/blob/main/CHANGELOG.md"
+}
+EOF
           done
+
+      - name: Commit and push all changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add template/module.prop CHANGELOG.md update*.json KernelEnhancer*.zip 2>/dev/null || true
+          git commit -m "chore: bump version to v${{ steps.bump_version.outputs.new_version }} [skip ci]" || echo "No changes to commit"
+          git push origin HEAD:main || git push origin HEAD:master
 
       - name: Create Release
         if: github.ref_name == 'main' || github.ref_name == 'master'
@@ -192,4 +214,6 @@ jobs:
         uses: actions/upload-artifact@main
         with:
           name: KernelEnhancer-Builds
-          path: KernelEnhancer*.zip
+          path: |
+            KernelEnhancer*.zip
+            update*.json

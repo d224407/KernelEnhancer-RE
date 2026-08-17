@@ -34,7 +34,5 @@ case "$ARCH" in
         ;;
 esac
 
-# Run in background
-nohup "$BIN" > /dev/null 2>&1 &
 
 echo "KernelEnhancer started at $(date) on $ARCH" > /data/local/tmp/status.log
