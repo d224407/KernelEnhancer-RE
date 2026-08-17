@@ -14,6 +14,9 @@ on:
           - yes
           - no
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@main
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -140,7 +143,7 @@ jobs:
             fi
             for arch in "${ARCHS[@]}"; do
               mkdir -p "build/${arch}/${variant}"
-              ${CLANG[$arch]} $CFLAGS -o "build/${arch}/${variant}/kernelenhancer" "$SRC"
+              "${CLANG[$arch]}" $CFLAGS -o "build/${arch}/${variant}/kernelenhancer" "$SRC"
               "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-all "build/${arch}/${variant}/kernelenhancer"
             done
           done
@@ -172,14 +175,8 @@ jobs:
               JSON_NAME="update-${variant}.json"
             fi
 
-            cat > "$JSON_NAME" << EOF
-{
-  "version": "${NEW_VERSION}",
-  "versionCode": "${NEW_VERSION_CODE}",
-  "zipUrl": "https://github.com/${REPO}/releases/tag/v${NEW_VERSION}/${ZIP_NAME}",
-  "changelog": "https://github.com/${REPO}/blob/main/CHANGELOG.md"
-}
-EOF
+            printf '{\n  "version": "%s",\n  "versionCode": "%s",\n  "zipUrl": "https://github.com/%s/releases/download/v%s/%s",\n  "changelog": "https://github.com/%s/blob/main/CHANGELOG.md"\n}\n' \
+              "$NEW_VERSION" "$NEW_VERSION_CODE" "$REPO" "$NEW_VERSION" "$ZIP_NAME" "$REPO" > "$JSON_NAME"
           done
 
       - name: Commit and push all changes
@@ -192,7 +189,7 @@ EOF
 
       - name: Create Release
         if: github.ref_name == 'main' || github.ref_name == 'master'
-        uses: softprops/action-gh-release@master
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.bump_version.outputs.new_version }}
           name: v${{ steps.bump_version.outputs.new_version }}
@@ -208,7 +205,7 @@ EOF
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@main
+        uses: actions/upload-artifact@v4
         with:
           name: KernelEnhancer-Builds
           path: KernelEnhancer*.zip
