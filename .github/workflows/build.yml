@@ -82,6 +82,7 @@ jobs:
           sed -i "s/^versionCode=.*/versionCode=${NEW_VERSION_CODE}/" template/module.prop
           sed -i "s/\"version\": \".*\"/\"version\": \"${NEW_VERSION}\"/" update.json
           sed -i "s/\"versionCode\": \".*\"/\"versionCode\": \"${NEW_VERSION_CODE}\"/" update.json
+          sed -i "s|https://github.com/[^/]*/[^/]*/releases/tag/[^/]*/KernelEnhancer.zip|https://github.com/${{ github.repository }}/releases/tag/v${NEW_VERSION}/KernelEnhancer.zip|" update.json
 
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [[ -n "$LATEST_TAG" ]]; then
@@ -112,7 +113,6 @@ jobs:
           for date in "${!DATE_MAP[@]}"; do
             echo "#### $date" >> CHANGELOG_new.md
             echo "- ${DATE_MAP[$date]}" >> CHANGELOG_new.md
-            echo "" >> CHANGELOG_new.md
           done
 
           if [[ -f "CHANGELOG.md" ]]; then
