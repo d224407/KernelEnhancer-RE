@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.15 - 2026-08-17
+
+### Changes
+
 ## v7.14 - 2026-08-17
 
 ### Changes
