@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.13 - 2026-08-17
+
+### Changes
+#### 2026-08-17
+- rename Lite to FDE.AI variant
+
 ## v7.12 - 2026-08-17
 
 ### Changes
