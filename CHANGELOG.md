@@ -1,5 +1,13 @@
 # Changelog
 
+## v7.12 - 2026-08-17
+
+### Changes
+#### 2026-08-16
+- chore: bump version to v7.11 [skip ci]
+#### 2026-08-17
+- added Lite variant [skip ci]
+
 ## v7.11 - 2026-08-16
 
 ### Changes
