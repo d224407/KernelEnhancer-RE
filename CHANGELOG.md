@@ -1,35 +1,8 @@
-# Changelog
-
-## v7.17 - 2026-08-19
-
-### Changes
-
-## v7.16 - 2026-08-19
-
-### Changes
-
-## v7.15 - 2026-08-17
-
-### Changes
-
 ## v7.14 - 2026-08-17
 
 ### Changes
 #### 2026-08-17
-- removed background functions\n- removed background functions
-
-## v7.13 - 2026-08-17
-
-### Changes
-#### 2026-08-17
-- rename Lite to FDE.AI variant
-
-
-## v7.7 - 2026-08-06
-
-### Changes
-- fix code
-
+- removed background functions
 
 ## v7.6 - 2026-08-05
 

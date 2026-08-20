@@ -70,7 +70,10 @@ jobs:
           MINOR=$(echo "$VERSION" | cut -d'.' -f2)
           if [[ -z "$MINOR" ]]; then MINOR=0; fi
 
-          MAJOR_BUMP="${{ github.event.inputs.major_bump }}"
+          MAJOR_BUMP="no"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            MAJOR_BUMP="${{ github.event.inputs.major_bump }}"
+          fi
           if [[ "$MAJOR_BUMP" == "yes" ]]; then
             NEW_MAJOR=$((MAJOR + 1))
             NEW_MINOR=0
@@ -92,34 +95,37 @@ jobs:
             COMMITS=$(git log --pretty=format:"%s|%ad" --date=short)
           fi
 
-          echo "# Changelog" > CHANGELOG_new.md
-          echo "" >> CHANGELOG_new.md
-          echo "## v${NEW_VERSION} - $(date +'%Y-%m-%d')" >> CHANGELOG_new.md
-          echo "" >> CHANGELOG_new.md
-          echo "### Changes" >> CHANGELOG_new.md
+          if [[ -n "$COMMITS" ]]; then
+            echo "# Changelog" > CHANGELOG_new.md
+            echo "" >> CHANGELOG_new.md
+            echo "## v${NEW_VERSION} - $(date +'%Y-%m-%d')" >> CHANGELOG_new.md
+            echo "" >> CHANGELOG_new.md
+            echo "### Changes" >> CHANGELOG_new.md
 
-          declare -A DATE_MAP
-          while IFS= read -r line; do
-            if [[ -z "$line" ]]; then continue; fi
-            msg="${line%|*}"
-            date="${line#*|}"
-            if [[ "$msg" == !* ]]; then continue; fi
-            if [[ -z "${DATE_MAP[$date]}" ]]; then
-              DATE_MAP[$date]="$msg"
-            else
-              DATE_MAP[$date]="${DATE_MAP[$date]}\n- $msg"
+            declare -A DATE_MAP
+            while IFS= read -r line; do
+              if [[ -z "$line" ]]; then continue; fi
+              msg="${line%|*}"
+              date="${line#*|}"
+              if [[ -z "${DATE_MAP[$date]}" ]]; then
+                DATE_MAP[$date]="$msg"
+              else
+                DATE_MAP[$date]="${DATE_MAP[$date]}\n- $msg"
+              fi
+            done <<< "$COMMITS"
+
+            for date in "${!DATE_MAP[@]}"; do
+              echo "#### $date" >> CHANGELOG_new.md
+              echo "- ${DATE_MAP[$date]}" >> CHANGELOG_new.md
+            done
+
+            if [[ -f "CHANGELOG.md" ]]; then
+              tail -n +2 CHANGELOG.md >> CHANGELOG_new.md
             fi
-          done <<< "$COMMITS"
-
-          for date in "${!DATE_MAP[@]}"; do
-            echo "#### $date" >> CHANGELOG_new.md
-            echo "- ${DATE_MAP[$date]}" >> CHANGELOG_new.md
-          done
-
-          if [[ -f "CHANGELOG.md" ]]; then
-            tail -n +2 CHANGELOG.md >> CHANGELOG_new.md
+            mv CHANGELOG_new.md CHANGELOG.md
+          else
+            [[ -f "CHANGELOG.md" ]] || echo "# Changelog" > CHANGELOG.md
           fi
-          mv CHANGELOG_new.md CHANGELOG.md
 
           echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "new_version_code=${NEW_VERSION_CODE}" >> $GITHUB_OUTPUT
@@ -154,6 +160,7 @@ jobs:
           NEW_VERSION="${{ steps.bump_version.outputs.new_version }}"
           NEW_VERSION_CODE="${{ steps.bump_version.outputs.new_version_code }}"
           REPO="${{ github.repository }}"
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
 
           for variant in "${VARIANT_LIST[@]}"; do
             MODULE_DIR="KernelEnhancer${variant:+-$variant}"
@@ -165,7 +172,7 @@ jobs:
               ZIP_NAME="KernelEnhancer-${variant}.zip"
               JSON_NAME="update-${variant}.json"
             fi
-            UPDATE_JSON_URL="https://raw.githubusercontent.com/${REPO}/main/${JSON_NAME}"
+            UPDATE_JSON_URL="https://raw.githubusercontent.com/${REPO}/${DEFAULT_BRANCH}/${JSON_NAME}"
 
             mkdir -p "$MODULE_DIR/system/bin"
             cp -r template/* "$MODULE_DIR/" 2>/dev/null || true
@@ -178,29 +185,28 @@ jobs:
             find "$MODULE_DIR" -type f -name "*.sh" -exec chmod 755 {} +
             cd "$MODULE_DIR" && zip -r9 "../${ZIP_NAME}" . && cd ..
 
-            printf '{\n  "version": "%s",\n  "versionCode": "%s",\n  "zipUrl": "https://github.com/%s/releases/download/v%s/%s",\n  "changelog": "https://github.com/%s/blob/main/CHANGELOG.md"\n}\n' \
-              "$NEW_VERSION" "$NEW_VERSION_CODE" "$REPO" "$NEW_VERSION" "$ZIP_NAME" "$REPO" > "$JSON_NAME"
+            printf '{\n  "version": "%s",\n  "versionCode": "%s",\n  "zipUrl": "https://github.com/%s/releases/download/v%s/%s",\n  "changelog": "https://github.com/%s/blob/%s/CHANGELOG.md"\n}\n' \
+              "$NEW_VERSION" "$NEW_VERSION_CODE" "$REPO" "$NEW_VERSION" "$ZIP_NAME" "$REPO" "$DEFAULT_BRANCH" > "$JSON_NAME"
           done
 
       - name: Commit and push all changes
+        continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add template/module.prop CHANGELOG.md update*.json 2>/dev/null || true
           git commit -m "chore: bump version to v${{ steps.bump_version.outputs.new_version }} [skip ci]" || echo "No changes to commit"
-          git push origin HEAD:main || git push origin HEAD:master
+          git push origin HEAD:${{ github.event.repository.default_branch }}
 
       - name: Create Release
-        if: github.ref_name == 'main' || github.ref_name == 'master'
+        if: github.ref_name == github.event.repository.default_branch
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.bump_version.outputs.new_version }}
           name: v${{ steps.bump_version.outputs.new_version }}
           body: |
             ## KernelEnhancer v${{ steps.bump_version.outputs.new_version }}
-            📦 **Downloads**:
-            ${{ steps.variants.outputs.variants }}
-            🔗 **Changelog**: https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md
+            **Changelog**: https://github.com/${{ github.repository }}/blob/${{ github.event.repository.default_branch }}/CHANGELOG.md
           draft: false
           prerelease: false
           files: KernelEnhancer*.zip

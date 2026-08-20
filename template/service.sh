@@ -12,7 +12,7 @@ case "$ARCH" in
         BIN="$MODDIR/system/bin/kernelenhancer_32"
         ;;
     x86_64|x86_64-v2|x86_64-v3)
-        BIN="$MODDIR/system/bin/kernelenhancer_x86_64"
+        BIN="$MODDIR/system/bin/kernelenhancer_x64"
         ;;
     x86|i686|i586|i486|i386)
         BIN="$MODDIR/system/bin/kernelenhancer_x86"
