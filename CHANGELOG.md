@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.20 - 2026-08-22
+
+### Changes
+#### 2026-08-22
+- empty commit
+
 ## v7.19 - 2026-08-22
 
 ### Changes
