@@ -1,5 +1,11 @@
 # Changelog
 
+## v7.19 - 2026-08-22
+
+### Changes
+#### 2026-08-22
+- Merge source
+
 ## v7.18 - 2026-08-20
 
 ### Changes
